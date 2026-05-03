@@ -50,6 +50,7 @@ export default function DOMSim() {
   const [lastPrice, setLastPrice] = useState(null);
   const [priceDir, setPriceDir]   = useState(0);
   const [connected, setConnected] = useState(false);
+  const [lastPrices, setLastPrices] = useState({});
 
   // Account — each lot is a separate entry: { id, symbol, side:"long"|"short", qty, entryPrice }
   const [balance, setBalance]     = useState(INITIAL_BALANCE);
@@ -69,7 +70,6 @@ export default function DOMSim() {
   const spreadRowRef   = useRef(null);
   const hasCenteredRef = useRef(false);
 
-  useEffect(() => { bookRef.current    = book;    }, [book]);
   useEffect(() => { pendingRef.current = pending; }, [pending]);
   useEffect(() => { balanceRef.current = balance; }, [balance]);
   useEffect(() => { lotsRef.current    = lots;    }, [lots]);
@@ -206,6 +206,7 @@ export default function DOMSim() {
         setPriceDir(prevPriceRef.current == null ? 0 : p > prevPriceRef.current ? 1 : p < prevPriceRef.current ? -1 : 0);
         prevPriceRef.current = p;
         setLastPrice(p);
+        setLastPrices(prev => ({ ...prev, [sym.id]: p }));
       }
       if (stream.includes("depth")) {
         const bids = data.bids.map(([p, q]) => ({ price: parseFloat(p), qty: parseFloat(q) }));
@@ -223,12 +224,9 @@ export default function DOMSim() {
     if (hasCenteredRef.current || !spreadRowRef.current || !domScrollRef.current) return;
     spreadRowRef.current.scrollIntoView({ block: "center" });
     hasCenteredRef.current = true;
-  });
-
-  // ── Build linear grid ────────────────────────────────────────────────────────
+  }, [lastPrice]);
   const domGrid = useMemo(() => {
     if (!lastPrice) return [];
-    const { } = sym; // tick comes from state
     const midKey     = Math.round(lastPrice / tick);
     const bidMap     = bucketBook(book.bids, tick);
     const askMap     = bucketBook(book.asks, tick);
@@ -280,9 +278,11 @@ export default function DOMSim() {
       ? (totalLong > 0 ? "sell" : "short")
       : (totalShort > 0 ? "cover" : "buy");
 
-    // Check if there's already a pending order at this row price & side — if so, cancel it
+    // Check if there's already a pending order at this row price on the same side — if so, cancel it
+    const isSellSide = clickSide === "sell";
     const existing = pendingRef.current.find(o =>
-      o.symbol === sym.id && o.side === side &&
+      o.symbol === sym.id &&
+      (isSellSide ? (o.side === "sell" || o.side === "short") : (o.side === "buy" || o.side === "cover")) &&
       Math.abs(o.price - rowPrice) < tick * 0.5
     );
     if (existing) {
@@ -336,14 +336,15 @@ export default function DOMSim() {
   const activePending = pending.filter(o => o.symbol === sym.id);
 
   const unrealizedPnl = useMemo(() => {
-    if (!lastPrice) return 0;
     return lots.reduce((acc, lot) => {
+      const price = lastPrices[lot.symbol];
+      if (price == null) return acc;
       const pnl = lot.side === "long"
-        ? (lastPrice - lot.entryPrice) * lot.qty
-        : (lot.entryPrice - lastPrice) * lot.qty;
+        ? (price - lot.entryPrice) * lot.qty
+        : (lot.entryPrice - price) * lot.qty;
       return acc + pnl;
     }, 0);
-  }, [lastPrice, lots]);
+  }, [lastPrices, lots]);
 
   const equity = balance + unrealizedPnl;
 
@@ -547,8 +548,9 @@ export default function DOMSim() {
               <div style={{ flex: 1, overflowY: "auto" }}>
                 {lots.length === 0 ? <Emp>No open lots</Emp> : lots.map(lot => {
                   const s   = SYMBOLS.find(s => s.id === lot.symbol) ?? sym;
-                  const pnl = lastPrice && lot.symbol === sym.id
-                    ? (lot.side === "long" ? lastPrice - lot.entryPrice : lot.entryPrice - lastPrice) * lot.qty
+                  const lotPrice = lastPrices[lot.symbol];
+                  const pnl = lotPrice != null
+                    ? (lot.side === "long" ? lotPrice - lot.entryPrice : lot.entryPrice - lotPrice) * lot.qty
                     : null;
                   return (
                     <div key={lot.id} style={{ padding: "5px 10px", borderBottom: `1px solid ${C.border}` }}>
