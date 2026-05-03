@@ -4,6 +4,8 @@ A browser-based Depth of Market (DOM) simulator for crypto trading practice. Str
 
 ![App main view](screenshot.png)
 
+**Demo website**: https://domsim.nextmiracle.eu/
+
 ## Features
 
 - **Live order book** — real-time bid/ask depth via Binance WebSocket (`depth20@100ms`)
