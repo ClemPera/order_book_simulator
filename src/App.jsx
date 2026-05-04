@@ -10,7 +10,7 @@ const SYMBOLS = [
 ];
 
 const INITIAL_BALANCE = 10_000;
-const GRID_LEVELS     = 30;
+const GRID_LEVELS     = 150;
 
 const C = {
   bg:     "#080b12",
@@ -492,7 +492,7 @@ export default function DOMSim() {
                 />
               </div>
               <button
-                onClick={() => { hasCenteredRef.current = false; }}
+                onClick={() => spreadRowRef.current?.scrollIntoView({ block: "center" })}
                 title="Re-center on spread"
                 style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.dim, padding: "5px 9px", cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}
               >⊙</button>
