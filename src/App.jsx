@@ -9,7 +9,7 @@ const SYMBOLS = [
   { id: "xrpusdt", label: "XRP/USDT", tv: "BINANCE:XRPUSDT",  dec: 4, qDec: 0, ticks: [0.0001, 0.0005, 0.001, 0.005, 0.01]  },
 ];
 
-const INITIAL_BALANCE = 10_000;
+const INITIAL_BALANCE = 150_000;
 const GRID_LEVELS     = 150;
 
 const C = {
