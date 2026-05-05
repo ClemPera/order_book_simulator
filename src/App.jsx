@@ -112,7 +112,7 @@ export default function DOMSim() {
   const recenterDOM = useCallback(() => {
     const el = domScrollRef.current;
     if (!el) return;
-    el.scrollTop = GRID_LEVELS * DOM_ROW_H - el.clientHeight / 2 + DOM_ROW_H / 2;
+    el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
   }, []);
 
   useEffect(() => { pendingRef.current = pending; }, [pending]);
