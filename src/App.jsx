@@ -43,6 +43,10 @@ export default function DOMSim() {
   const [symIdx, setSymIdx]       = useState(0);
   const [tickIdx, setTickIdx]     = useState(4);
   const sym                       = SYMBOLS[symIdx];
+  const [panelW, setPanelW]       = useState({ chart: 33, dom: 300, lotsR: 33, pendingR: 33 });
+  const dragRef  = useRef(null);
+  const bodyRef  = useRef(null);
+  const rightRef = useRef(null);
   const tick                      = sym.ticks[Math.min(tickIdx, sym.ticks.length - 1)];
   const priceDec                  = Math.max(0, Math.ceil(-Math.log10(tick)));
 
@@ -69,6 +73,47 @@ export default function DOMSim() {
   const domScrollRef   = useRef(null);
   const spreadRowRef   = useRef(null);
   const hasCenteredRef = useRef(false);
+  const DOM_ROW_H      = 17;
+
+  const startDrag = useCallback((handle, e) => {
+    e.preventDefault();
+    dragRef.current = { handle, startX: e.clientX, startVals: { ...panelW } };
+  }, [panelW]);
+
+  useEffect(() => {
+    const onMove = (e) => {
+      const d = dragRef.current;
+      if (!d || !bodyRef.current) return;
+      const dx  = e.clientX - d.startX;
+      const totW = bodyRef.current.offsetWidth;
+      if (d.handle === "chart") {
+        const pct = Math.max(15, Math.min(60, d.startVals.chart + (dx / totW) * 100));
+        setPanelW(p => ({ ...p, chart: pct }));
+      } else if (d.handle === "dom") {
+        const px = Math.max(180, Math.min(500, d.startVals.dom + dx));
+        setPanelW(p => ({ ...p, dom: px }));
+      } else if (d.handle === "lotsR" || d.handle === "pendingR") {
+        if (!rightRef.current) return;
+        const rw = rightRef.current.offsetWidth;
+        const key = d.handle;
+        const pct = Math.max(15, Math.min(70, d.startVals[key] + (dx / rw) * 100));
+        setPanelW(p => ({ ...p, [key]: pct }));
+      }
+    };
+    const onUp = () => { dragRef.current = null; };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup",  onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup",  onUp);
+    };
+  }, []);
+
+  const recenterDOM = useCallback(() => {
+    const el = domScrollRef.current;
+    if (!el) return;
+    el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
+  }, []);
 
   useEffect(() => { pendingRef.current = pending; }, [pending]);
   useEffect(() => { balanceRef.current = balance; }, [balance]);
@@ -221,10 +266,10 @@ export default function DOMSim() {
 
   // Center DOM on first data
   useEffect(() => {
-    if (hasCenteredRef.current || !spreadRowRef.current || !domScrollRef.current) return;
-    spreadRowRef.current.scrollIntoView({ block: "center" });
+    if (hasCenteredRef.current || !lastPrice) return;
     hasCenteredRef.current = true;
-  }, [lastPrice]);
+    recenterDOM();
+  }, [lastPrice, recenterDOM]);
   const domGrid = useMemo(() => {
     if (!lastPrice) return [];
     const midKey     = Math.round(lastPrice / tick);
@@ -376,10 +421,10 @@ export default function DOMSim() {
       </div>
 
       {/* ── Body ── */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <div ref={bodyRef} style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-        {/* Chart — 1/3 */}
-        <div style={{ flex: "0 0 33%", borderRight: `1px solid ${C.border}`, minWidth: 0 }}>
+        {/* Chart */}
+        <div style={{ flex: `0 0 ${panelW.chart}%`, minWidth: 0, overflow: "hidden" }}>
           <iframe
             key={sym.tv}
             src={`https://www.tradingview.com/widgetembed/?symbol=${sym.tv}&interval=1&theme=dark&style=1&locale=en&toolbar_bg=0c1020&hide_side_toolbar=0&allow_symbol_change=0&save_image=0`}
@@ -388,8 +433,12 @@ export default function DOMSim() {
           />
         </div>
 
-        {/* DOM — fixed width, ~300px */}
-        <div style={{ flex: "0 0 300px", borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div
+          onMouseDown={(e) => startDrag("chart", e)}
+          style={{ width: 5, flexShrink: 0, cursor: "col-resize", background: "transparent", borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}`, transition: "background 0.15s", zIndex: 10 }}
+        />
+        {/* DOM */}
+        <div style={{ flex: `0 0 ${panelW.dom}px`, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
           {/* Column headers */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 105px 1fr", padding: "3px 4px", background: C.bg2, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
@@ -492,7 +541,7 @@ export default function DOMSim() {
                 />
               </div>
               <button
-                onClick={() => spreadRowRef.current?.scrollIntoView({ block: "center" })}
+                onClick={recenterDOM}
                 title="Re-center on spread"
                 style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 3, color: C.dim, padding: "5px 9px", cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}
               >⊙</button>
@@ -518,8 +567,12 @@ export default function DOMSim() {
           </div>
         </div>
 
-        {/* ── Right panel — takes remaining space ── */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+        <div
+          onMouseDown={(e) => startDrag("dom", e)}
+          style={{ width: 5, flexShrink: 0, cursor: "col-resize", background: "transparent", borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}`, transition: "background 0.15s", zIndex: 10 }}
+        />
+        {/* Right panel */}
+        <div ref={rightRef} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
 
           {/* Account summary */}
           <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}`, background: C.bg2, flexShrink: 0, display: "flex", gap: 24, alignItems: "center" }}>
@@ -542,8 +595,8 @@ export default function DOMSim() {
           {/* Three column layout for the panels */}
           <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
-            {/* Lots (positions) */}
-            <div style={{ flex: 1, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* Lots */}
+            <div style={{ flex: `0 0 ${panelW.lotsR}%`, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <Sec label="OPEN LOTS" />
               <div style={{ flex: 1, overflowY: "auto" }}>
                 {lots.length === 0 ? <Emp>No open lots</Emp> : lots.map(lot => {
@@ -576,8 +629,12 @@ export default function DOMSim() {
               </div>
             </div>
 
+            <div
+              onMouseDown={(e) => startDrag("lotsR", e)}
+              style={{ width: 5, flexShrink: 0, cursor: "col-resize", background: "transparent", borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}`, transition: "background 0.15s", zIndex: 10 }}
+            />
             {/* Pending orders */}
-            <div style={{ flex: 1, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ flex: `0 0 ${panelW.pendingR}%`, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <Sec label="PENDING ORDERS" />
               <div style={{ flex: 1, overflowY: "auto" }}>
                 {activePending.length === 0 ? <Emp>No pending orders</Emp> : activePending.map(o => (
@@ -597,6 +654,10 @@ export default function DOMSim() {
               </div>
             </div>
 
+            <div
+              onMouseDown={(e) => startDrag("pendingR", e)}
+              style={{ width: 5, flexShrink: 0, cursor: "col-resize", background: "transparent", borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}`, transition: "background 0.15s", zIndex: 10 }}
+            />
             {/* Trade history */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <Sec label="TRADE HISTORY" />
