@@ -52,6 +52,7 @@ export default function DOMSim() {
 
   const [book, setBook]           = useState({ bids: [], asks: [] });
   const [lastPrice, setLastPrice] = useState(null);
+  const [anchorKey,  setAnchorKey]  = useState(null);
   const [priceDir, setPriceDir]   = useState(0);
   const [connected, setConnected] = useState(false);
   const [lastPrices, setLastPrices] = useState({});
@@ -71,8 +72,7 @@ export default function DOMSim() {
   const prevPriceRef = useRef(null);
 
   const domScrollRef   = useRef(null);
-  const spreadRowRef   = useRef(null);
-  const hasCenteredRef = useRef(false);
+  const anchorRef      = useRef(null);
   const DOM_ROW_H      = 17;
 
   const startDrag = useCallback((handle, e) => {
@@ -232,7 +232,8 @@ export default function DOMSim() {
 
   // ── WebSocket ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    hasCenteredRef.current = false;
+    anchorRef.current = null;
+    setAnchorKey(null);
     setBook({ bids: [], asks: [] });
     setLastPrice(null);
     setConnected(false);
@@ -264,15 +265,24 @@ export default function DOMSim() {
     return () => ws.close();
   }, [sym.id, checkLimits]);
 
-  // Center DOM on first data
+  // Set anchor on first price; shift anchor + scroll when price drifts past 70% of grid
   useEffect(() => {
-    if (hasCenteredRef.current || !lastPrice) return;
-    hasCenteredRef.current = true;
-    recenterDOM();
-  }, [lastPrice, recenterDOM]);
+    if (!lastPrice) return;
+    const priceKey = Math.round(lastPrice / tick);
+    if (anchorRef.current === null) {
+      anchorRef.current = priceKey;
+      setAnchorKey(priceKey);
+      setTimeout(recenterDOM, 0);
+      return;
+    }
+    const drift = Math.abs(priceKey - anchorRef.current);
+    if (drift > GRID_LEVELS * 0.7) {
+      anchorRef.current = priceKey;
+      setAnchorKey(priceKey);
+    }
+  }, [lastPrice, tick, recenterDOM]);
   const domGrid = useMemo(() => {
-    if (!lastPrice) return [];
-    const midKey     = Math.round(lastPrice / tick);
+    if (!anchorKey) return [];
     const bidMap     = bucketBook(book.bids, tick);
     const askMap     = bucketBook(book.asks, tick);
     const bestBidKey = book.bids[0] ? Math.round(book.bids[0].price / tick) : null;
@@ -280,7 +290,7 @@ export default function DOMSim() {
 
     return Array.from({ length: GRID_LEVELS * 2 + 1 }, (_, idx) => {
       const i     = GRID_LEVELS - idx;
-      const key   = midKey + i;
+      const key   = anchorKey + i;
       const price = parseFloat((key * tick).toFixed(10));
       return {
         key, price,
@@ -291,7 +301,7 @@ export default function DOMSim() {
         isInSpread: bestBidKey != null && bestAskKey != null && key < bestAskKey && key > bestBidKey,
       };
     });
-  }, [book, lastPrice, sym, tick]);
+  }, [book, anchorKey, tick]);
 
   const maxQty = useMemo(() =>
     Math.max(...domGrid.map(r => Math.max(r.bidQty, r.askQty)), 1),
@@ -470,7 +480,6 @@ export default function DOMSim() {
               return (
                 <div
                   key={row.key}
-                  ref={row.isInSpread ? spreadRowRef : null}
                   style={{ display: "grid", gridTemplateColumns: "1fr 105px 1fr", position: "relative", background: rowBg, borderBottom: "1px solid rgba(24,32,53,0.5)", minHeight: 17 }}
                 >
                   {/* Bid bar */}
@@ -554,7 +563,7 @@ export default function DOMSim() {
               <div style={{ color: C.dim, fontSize: 9, marginBottom: 3 }}>GROUPING</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
                 {sym.ticks.map((t, i) => (
-                  <button key={t} onClick={() => setTickIdx(i)} style={{
+                  <button key={t} onClick={() => { setTickIdx(i); anchorRef.current = null; setAnchorKey(null); }} style={{
                     background: i === Math.min(tickIdx, sym.ticks.length - 1) ? "#0f1e3a" : "transparent",
                     color:      i === Math.min(tickIdx, sym.ticks.length - 1) ? C.blue : C.dim,
                     border: `1px solid ${i === Math.min(tickIdx, sym.ticks.length - 1) ? "#1e4080" : C.border}`,
